@@ -10,8 +10,8 @@ public class VehiculoYaRegistradoException extends RuntimeException {
 	
 	private static final long serialVersionUID = 7615240168464461171L;
 
-	public VehiculoYaRegistradoException(String placa) {
-        super("El vehículo con placa " + placa + " ya está registrado.");
+	public VehiculoYaRegistradoException(String message) {
+        super(message);
     }
 
 }

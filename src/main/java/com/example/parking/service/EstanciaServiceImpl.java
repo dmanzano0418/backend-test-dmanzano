@@ -9,94 +9,110 @@ import java.util.List;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.example.parking.dto.EstanciaDTO;
+import com.example.parking.dto.mapper.EstanciaMapper;
+import com.example.parking.exception.EstanciaNoEncontradaException;
+import com.example.parking.exception.VehiculoNoEncontradoException;
 import com.example.parking.model.entity.Estancia;
-import com.example.parking.model.entity.Residente;
 import com.example.parking.model.entity.Vehiculo;
 import com.example.parking.model.enums.TipoVehiculo;
 import com.example.parking.repository.EstanciaRepository;
-import com.example.parking.repository.NoResidenteRepository;
-import com.example.parking.repository.OficialRepository;
-import com.example.parking.repository.ResidenteRepository;
+import com.example.parking.repository.VehiculoRepository;
 
-import lombok.extern.slf4j.Slf4j;
+import lombok.RequiredArgsConstructor;
 
 /**
+ * Implementación del servicio {@link EstanciaService} para la gestión de estancias.
+ * Se encarga de mapear DTOs, validar existencia de vehículos y gestionar pagos.
  * 
+ * @author Daniel Manzano Borja
+ * @since 2025-08-10
  */
 @Service
-@Slf4j
+@RequiredArgsConstructor
 public class EstanciaServiceImpl implements EstanciaService {
 	
-	private OficialServiceImpl oficialService;
-    private ResidenteServiceImpl residenteService;
-    private NoResidenteServiceImpl noResidenteService;
-
-    private ResidenteRepository residenteRepository;
-    private OficialRepository oficialRepository;
-    private NoResidenteRepository noResidenteRepository;
     private EstanciaRepository estanciaRepository;
+    
+    private VehiculoRepository vehiculoRepository;
+    
+    private EstanciaMapper estanciaMapper;
+    
+    /**
+	 * Constructor that injects the estanciaRepository, vehiculoRepository and estanciaMapper interfaces.
+	 * 
+	 * @param estanciaRepository | EstanciaRepository JPA-interface.
+	 * @param vehiculoRepository | VehiculoRepository JPA-interface.
+	 * @param estanciaMapper    | EstanciaMapper.
+	 */
+    public EstanciaServiceImpl(EstanciaRepository estanciaRepository, VehiculoRepository vehiculoRepository, EstanciaMapper estanciaMapper) {
+    	this.estanciaRepository = estanciaRepository;
+    	this.vehiculoRepository = vehiculoRepository;
+    	this.estanciaMapper = estanciaMapper;
+    }
 
-	@Override
-	public void registrarEntrada(String placa) {
-		VehiculoService servicio = seleccionarServicio(placa);
-        servicio.registrarEntrada(placa);
-	}
+    /**
+     * {@inheritDoc}
+     */
+    @Override
+    public EstanciaDTO registrarEntrada(String placa) {
+    	Vehiculo vehiculo = vehiculoRepository.findByPlaca(placa)
+                .orElseThrow(() -> new VehiculoNoEncontradoException("Vehículo no encontrado con placa: " + placa));
 
-	@Override
-	public void registrarSalida(String placa) {
-		VehiculoService servicio = seleccionarServicio(placa);
-        servicio.registrarSalida(placa);
-	}
+        Estancia estancia = Estancia.builder()
+        		.vehiculo(vehiculo)
+        		.horaEntrada(LocalDateTime.now())
+        		.horaSalida(null)
+        		.importePago(0.0)
+        		.build();
+        
+        Estancia estanciaGuardada = estanciaRepository.save(estancia);
+        return estanciaMapper.toDTO(estanciaGuardada);
+    }
 
-	@Override
-	public void darDeAltaVehiculo(String placa, String tipo) {
-		TipoVehiculo tipoVehiculo;
-        try {
-            tipoVehiculo = TipoVehiculo.valueOf(tipo.toUpperCase());
-        } catch (IllegalArgumentException e) {
-            throw new RuntimeException("Tipo de vehículo no válido: " + tipo);
+    /**
+     * {@inheritDoc}
+     */
+    @Override
+    @Transactional
+    public EstanciaDTO registrarSalida(String placa) {
+    	Estancia estancia = estanciaRepository.findEstanciaActivaPorPlaca(placa)
+                .orElseThrow(() -> new EstanciaNoEncontradaException("No se encontró estancia activa para el vehículo con matricula: " + placa));
+
+        estancia.setHoraSalida(LocalDateTime.now());
+        
+        // calculamos importePago antes de guardar
+        double importe = estancia.calcularImportePago();
+        estancia.setImportePago(importe);
+        
+        // si es residente, acumular minutos en vehiculo
+        Vehiculo vehiculo = estancia.getVehiculo();
+        if (vehiculo.getTipo() == TipoVehiculo.RESIDENTE) {
+            long minutos = estancia.getDuracionMinutos();
+            vehiculo.acumularTiempo(minutos);
+            vehiculoRepository.save(vehiculo);
         }
+        
+        Estancia actualizada = estanciaRepository.save(estancia);
+        return estanciaMapper.toDTO(actualizada);
+    }
+    
+    /**
+     * {@inheritDoc}
+     */
+    @Override
+    @Transactional(readOnly = true)
+    public List<EstanciaDTO> listarEstancias() {
+        return estanciaMapper.toDTOList(estanciaRepository.findAll());
+    }
 
-        switch (tipoVehiculo) {
-            case OFICIAL -> oficialService.registrarAlta(placa);
-            case RESIDENTE -> residenteService.registrarAlta(placa);
-            case NO_RESIDENTE -> noResidenteService.registrarAlta(placa);
-            default -> throw new RuntimeException("Tipo de vehículo no soportado");
-        }
-	}
-
-	@Override
-	@Transactional
-	public void reiniciarMes() {
-		log.info("Reiniciando datos para nuevo mes...");
-		
-		// 1. Resetear tiempo acumulado de residentes
-	    List<Residente> residentes = residenteRepository.findAll();
-	    for (Residente r : residentes) {
-	        r.setTiempoEstacionado(0);
-	    }
-	    residenteRepository.saveAll(residentes);
-	    log.info("Tiempo acumulado de residentes reseteado.");
-
-	    // 2. Cerrar estancias abiertas de oficiales
-	    List<Estancia> estanciasAbiertas = estanciaRepository.findByHoraSalidaIsNull();
-	    for (Estancia e : estanciasAbiertas) {
-	        if (e.getVehiculo() instanceof Vehiculo) {
-	            e.setHoraSalida(LocalDateTime.now());
-	        }
-	    }
-	    estanciaRepository.saveAll(estanciasAbiertas);
-	    log.info("Estancias abiertas de oficiales cerradas.");
-
-	    log.info("Reinicio de mes completado correctamente.");
-		
-	}
-	
-	private VehiculoService seleccionarServicio(String placa) {
-        if (oficialRepository.existsById(placa)) return oficialService;
-        if (residenteRepository.existsById(placa)) return residenteService;
-        if (noResidenteRepository.existsById(placa)) return noResidenteService;
-        throw new RuntimeException("Vehículo no registrado con placa: " + placa);
+    /**
+     * {@inheritDoc}
+     */
+    @Override
+    @Transactional(readOnly = true)
+    public List<EstanciaDTO> listarEstanciasPorTipo(TipoVehiculo tipo) {
+        return estanciaMapper.toDTOList(estanciaRepository.findByVehiculo_Tipo(tipo));
     }
 
 }

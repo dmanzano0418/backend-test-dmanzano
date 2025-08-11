@@ -3,7 +3,8 @@
  */
 package com.example.parking.controller;
 
-import org.springframework.core.io.ByteArrayResource;
+import java.io.ByteArrayInputStream;
+
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -14,46 +15,45 @@ import org.springframework.web.bind.annotation.RestController;
 import com.example.parking.service.ReporteService;
 
 import io.swagger.v3.oas.annotations.Operation;
-import io.swagger.v3.oas.annotations.media.Content;
-import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
-import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
 
 /**
- * 
+ * Controlador para generación de reportes (PDF).
+ *
+ * Autor: Daniel Manzano Borja
+ * Fecha: 2025-08-09
  */
 @RestController
 @RequestMapping("/api/reportes")
-@Tag(name = "Reportes", description = "Operaciones relacionadas con reportes del estacionamiento")
+//@RequiredArgsConstructor
+@Tag(name = "Reportes", description = "Operaciones relacionadas con la generación de reportes PDF")
 public class ReporteController {
 	
 	private ReporteService reporteService;
+	
+	public ReporteController(ReporteService reporteService) {
+        this.reporteService = reporteService;
+    }
 
-	@Operation(
-	        summary = "Generar reporte de residentes",
-	        description = "Genera un archivo CSV con el tiempo estacionado y el monto a pagar por cada residente."
-	    )
-	    @ApiResponses(value = {
-	        @ApiResponse(
-	            responseCode = "200",
-	            description = "Reporte generado exitosamente",
-	            content = @Content(
-	                mediaType = "text/csv",
-	                schema = @Schema(type = "string", format = "binary")
-	            )
-	        ),
-	        @ApiResponse(responseCode = "500", description = "Error interno del servidor")
-	    })
-	@GetMapping("/residentes")
-    public ResponseEntity<ByteArrayResource> descargarReporteResidentes() {
-        ByteArrayResource recurso = reporteService.generarReporteResidentes();
+	/**
+     * Genera un reporte PDF con los pagos de los vehículos residentes.
+     *
+     * @return PDF file.
+     */
+	@Operation(summary = "Generar reporte de pagos de residentes",
+            description = "Genera un archivo PDF con los pagos de los vehículos de tipo RESIDENTE",
+            responses = {
+                    @ApiResponse(responseCode = "200", description = "Reporte generado correctamente"),
+                    @ApiResponse(responseCode = "500", description = "Error al generar el reporte")
+            })
+    @GetMapping(value = "/reportes/pagos-residentes", produces = MediaType.APPLICATION_PDF_VALUE)
+    public ResponseEntity<byte[]> generarReportePagosResidentes() {
+        ByteArrayInputStream bis = reporteService.generarReportePagosResidentes();
 
         return ResponseEntity.ok()
-                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=reporte_residentes.csv")
-                .contentType(MediaType.parseMediaType("text/csv"))
-                .contentLength(recurso.contentLength())
-                .body(recurso);
+                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=pagos_residentes.pdf")
+                .body(bis.readAllBytes());
     }
 
 }

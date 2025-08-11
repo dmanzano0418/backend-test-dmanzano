@@ -1,79 +1,91 @@
 package com.example.parking.exception;
 
+import java.time.LocalDateTime;
+import java.util.HashMap;
+import java.util.Map;
+
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
-import org.springframework.web.context.request.WebRequest;
 
-import java.time.LocalDateTime;
+import jakarta.servlet.http.HttpServletRequest;
 
+/**
+ * Manejador global de excepciones para toda la aplicación.
+ */
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
-    private ErrorResponse buildError(HttpStatus status, String message, WebRequest request) {
-        return new ErrorResponse(
-                LocalDateTime.now(),
-                status.value(),
-                status.getReasonPhrase(),
-                message,
-                request.getDescription(false).replace("uri=", "")
-        );
+	@ExceptionHandler(VehiculoYaRegistradoException.class)
+    public ResponseEntity<ErrorResponse> handleVehiculoYaRegistrado(
+            VehiculoYaRegistradoException ex, HttpServletRequest request) {
+        return buildErrorResponse(ex, HttpStatus.CONFLICT, request);
     }
 
     @ExceptionHandler(VehiculoNoEncontradoException.class)
     public ResponseEntity<ErrorResponse> handleVehiculoNoEncontrado(
-            VehiculoNoEncontradoException ex, WebRequest request) {
-        return ResponseEntity.status(HttpStatus.NOT_FOUND)
-                .body(buildError(HttpStatus.NOT_FOUND, ex.getMessage(), request));
+            VehiculoNoEncontradoException ex, HttpServletRequest request) {
+        return buildErrorResponse(ex, HttpStatus.NOT_FOUND, request);
     }
 
-    @ExceptionHandler(EstanciaNoEncontradaException.class)
-    public ResponseEntity<ErrorResponse> handleEstanciaNoEncontrada(
-            EstanciaNoEncontradaException ex, WebRequest request) {
-        return ResponseEntity.status(HttpStatus.NOT_FOUND)
-                .body(buildError(HttpStatus.NOT_FOUND, ex.getMessage(), request));
-    }
-    
     @ExceptionHandler(VehiculoYaEnEstacionamientoException.class)
     public ResponseEntity<ErrorResponse> handleVehiculoYaEnEstacionamiento(
-            VehiculoYaEnEstacionamientoException ex, WebRequest request) {
-        return ResponseEntity.status(HttpStatus.CONFLICT)
-                .body(buildError(HttpStatus.CONFLICT, ex.getMessage(), request));
+            VehiculoYaEnEstacionamientoException ex, HttpServletRequest request) {
+        return buildErrorResponse(ex, HttpStatus.BAD_REQUEST, request);
     }
 
     @ExceptionHandler(VehiculoSinEstanciaActivaException.class)
     public ResponseEntity<ErrorResponse> handleVehiculoSinEstanciaActiva(
-            VehiculoSinEstanciaActivaException ex, WebRequest request) {
-        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-                .body(buildError(HttpStatus.BAD_REQUEST, ex.getMessage(), request));
+            VehiculoSinEstanciaActivaException ex, HttpServletRequest request) {
+        return buildErrorResponse(ex, HttpStatus.BAD_REQUEST, request);
     }
 
-    @ExceptionHandler(VehiculoYaRegistradoException.class)
-    public ResponseEntity<ErrorResponse> handleVehiculoYaRegistrado(
-            VehiculoYaRegistradoException ex, WebRequest request) {
-        return ResponseEntity.status(HttpStatus.CONFLICT)
-                .body(buildError(HttpStatus.CONFLICT, ex.getMessage(), request));
+    @ExceptionHandler(EstanciaNoEncontradaException.class)
+    public ResponseEntity<ErrorResponse> handleEstanciaNoEncontrada(
+            EstanciaNoEncontradaException ex, HttpServletRequest request) {
+        return buildErrorResponse(ex, HttpStatus.NOT_FOUND, request);
     }
 
+    /**
+     * Maneja la excepción personalizada ReporteGeneracionException y devuelve un JSON con código 500.
+     *
+     * @param ex la excepción lanzada.
+     * @return respuesta con detalles del error.
+     */
     @ExceptionHandler(ReporteGeneracionException.class)
-    public ResponseEntity<ErrorResponse> handleReporteGeneracion(
-            ReporteGeneracionException ex, WebRequest request) {
-        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                .body(buildError(HttpStatus.INTERNAL_SERVER_ERROR, ex.getMessage(), request));
+    public ResponseEntity<Map<String, Object>> handleReporteGeneracionException(ReporteGeneracionException ex) {
+        Map<String, Object> body = new HashMap<>();
+        body.put("timestamp", LocalDateTime.now());
+        body.put("status", HttpStatus.INTERNAL_SERVER_ERROR.value());
+        body.put("error", "Error en generación de reporte");
+        body.put("message", ex.getMessage());
+
+        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(body);
     }
 
     @ExceptionHandler(IllegalArgumentException.class)
-    public ResponseEntity<ErrorResponse> handleBadRequest(
-            IllegalArgumentException ex, WebRequest request) {
-        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-                .body(buildError(HttpStatus.BAD_REQUEST, ex.getMessage(), request));
+    public ResponseEntity<ErrorResponse> handleIllegalArgument(
+            IllegalArgumentException ex, HttpServletRequest request) {
+        return buildErrorResponse(ex, HttpStatus.BAD_REQUEST, request);
     }
 
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ErrorResponse> handleGenericException(
-            Exception ex, WebRequest request) {
-        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                .body(buildError(HttpStatus.INTERNAL_SERVER_ERROR, ex.getMessage(), request));
+            Exception ex, HttpServletRequest request) {
+        return buildErrorResponse(ex, HttpStatus.INTERNAL_SERVER_ERROR, request);
     }
+
+    private ResponseEntity<ErrorResponse> buildErrorResponse(
+            Exception ex, HttpStatus status, HttpServletRequest request) {
+        ErrorResponse error = new ErrorResponse(
+                LocalDateTime.now(),
+                status.value(),
+                status.getReasonPhrase(),
+                ex.getMessage(),
+                request.getRequestURI()
+        );
+        return new ResponseEntity<>(error, status);
+    }
+	
 }
